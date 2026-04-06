@@ -1,0 +1,65 @@
+name: "Ansible Software Deployment"
+
+on:
+  workflow_run:
+    workflows: ["Terraform Deploy"] 
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      manual_ip:
+        description: 'Введіть IP (тільки для ручного запуску)'
+        required: false
+
+jobs:
+  ansible:
+    runs-on: ubuntu-latest
+    # Запускаємо, якщо Terraform пройшов успішно АБО якщо це ручний запуск
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- ЛОГІКА ДЛЯ АВТОМАТИЧНОГО ЗАПУСКУ (ВІД TERRAFORM) ---
+      - name: Download IP Artifact
+        # Цей крок виконується ТІЛЬКИ якщо конвеєр викликав Terraform
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-ip
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ./artifact-data # Складаємо в окрему папку, щоб точно знати, де він
+
+      # --- ВСТАНОВЛЕННЯ ЗМІННОЇ ЗАЛЕЖНО ВІД ТИПУ ЗАПУСКУ ---
+      - name: Set IP Variable
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VM_IP=${{ github.event.inputs.manual_ip }}" >> $GITHUB_ENV
+          else
+            # Читаємо з папки, куди скачали артефакт
+            echo "VM_IP=$(cat ./artifact-data/vm_ip.txt)" >> $GITHUB_ENV
+          fi
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.VM_IP }} >> ~/.ssh/known_hosts
+
+      - name: Ansible Pre-install Check (Dry Run)
+        run: |
+          ansible-playbook ansible/playbook.yml \
+            -i "${{ env.VM_IP }}," \
+            -u ubuntu \
+            --private-key ~/.ssh/id_rsa \
+            --check \
+            --diff
+
+      - name: Ansible Real Install
+        run: |
+          ansible-playbook ansible/playbook.yml \
+            -i "${{ env.VM_IP }}," \
+            -u ubuntu \
+            --private-key ~/.ssh/id_rsa
