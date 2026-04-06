@@ -48,12 +48,13 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ env.VM_IP }} >> ~/.ssh/known_hosts
 
-      - name: Ansible Pre-install Check (Dry Run)
+      - name: Ansible Pre-install Check
         run: |
           ansible-playbook ansible/playbook.yml \
             -i "${{ env.VM_IP }}," \
             -u ubuntu \
             --private-key ~/.ssh/id_rsa \
+            --ssh-common-args='-o StrictHostKeyChecking=no' \
             --check \
             --diff
 
@@ -62,4 +63,5 @@ jobs:
           ansible-playbook ansible/playbook.yml \
             -i "${{ env.VM_IP }}," \
             -u ubuntu \
-            --private-key ~/.ssh/id_rsa
+            --private-key ~/.ssh/id_rsa \
+            --ssh-common-args='-o StrictHostKeyChecking=no'

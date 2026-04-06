@@ -1,16 +1,16 @@
 ---
 - name: 2. Install Kubernetes Components and Proxy
-  # Звертаємось до групи, яку створимо динамічно в CI/CD
   hosts: all
   become: yes
 
   tasks:
+    # --- 2.1 Core system dependencies ---
     - name: Force apt cache update
       apt:
         update_cache: yes
       check_mode: false
 
-    - name: Install all dependencies and Docker
+    - name: Install dependencies
       apt:
         name:
           - apt-transport-https
@@ -18,8 +18,13 @@
           - curl
           - software-properties-common
           - conntrack
-          - socat
-          - docker.io
+          - socat # Потрібен для port-forwarding
+        state: present
+
+    # --- 2.2 Docker installation ---
+    - name: Install Docker
+      apt:
+        name: docker.io
         state: present
 
     - name: Enable and start Docker
@@ -27,17 +32,19 @@
         name: docker
         state: started
         enabled: yes
+      when: not ansible_check_mode
 
     - name: Add 'ubuntu' user to 'docker' group
       user:
         name: ubuntu
         groups: docker
         append: yes
+      when: not ansible_check_mode
 
     - name: Reset connection to apply group changes
       meta: reset_connection
 
-    # Замість shell використовуємо get_url для підтримки --check
+    # --- 2.3 Kubectl, Minikube, Helm ---
     - name: Install kubectl
       get_url:
         url: "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl"
@@ -51,26 +58,20 @@
         mode: '0755'
 
     - name: Install Helm
-      get_url:
-        url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
-        dest: /tmp/get_helm.sh
-        mode: '0755'
-
-    - name: Execute Helm installation script
-      shell: /tmp/get_helm.sh
+      shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
       args:
         creates: /usr/local/bin/helm
 
+    # --- 2.4 Kubernetes cluster launch ---
     - name: Start Minikube (User mode)
-      become: no # Запускаємо від ubuntu
-      command: minikube start --driver=docker
-      register: minikube_start
-      # Ігноруємо помилки під час --check, бо Minikube ще не встановлено
-      ignore_errors: "{{ ansible_check_mode }}"
-      changed_when: "'Created' in minikube_start.stdout or 'Starting' in minikube_start.stdout"
+      become: no # Запускаємо від імені ubuntu, а не root
+      shell: |
+        minikube start --driver=docker
+      # Пропускаємо реальний запуск під час Dry Run
+      when: not ansible_check_mode 
 
-    # Виконання вимоги: Прокидання проксі для доступу до Minikube
-    - name: Setup kubectl proxy as a background service
+    # --- 2.5 Proxy Forwarding (ВИМОГА ЕКЗАМЕНУ) ---
+    - name: Setup kubectl proxy as a systemd service
       copy:
         dest: /etc/systemd/system/kubectl-proxy.service
         content: |
@@ -80,7 +81,7 @@
 
           [Service]
           User=ubuntu
-          # Прокидаємо на порт 8001 (який ти відкрив у Terraform)
+          # Прокидаємо проксі на порт 8001
           ExecStart=/usr/local/bin/kubectl proxy --address='0.0.0.0' --port=8001 --accept-hosts='^.*$'
           Restart=always
 
@@ -93,4 +94,4 @@
         state: restarted
         enabled: yes
         daemon_reload: yes
-      ignore_errors: "{{ ansible_check_mode }}"
+      when: not ansible_check_mode
