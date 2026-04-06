@@ -1,0 +1,45 @@
+name: "Terraform Destroy"
+
+on:
+  # Цей тригер дозволяє запускати конвеєр виключно вручну через кнопку в інтерфейсі GitHub
+  workflow_dispatch: 
+
+jobs:
+  destroy:
+    name: "Destroy Infrastructure"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./terraform 
+
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      
+      TF_VAR_region: "europe-central2"
+      TF_VAR_zone: "europe-central2-a"
+      TF_VAR_vm_name: "savitskyi-node"
+      TF_VAR_vpc_name: "savitskyi-vpc"
+      TF_VAR_subnet_name: "savitskyi-subnet"
+      TF_VAR_firewall_name: "savitskyi-firewall"
+      TF_VAR_bucket_name: "savitskyi-bucket"
+      TF_VAR_subnet_cidr: "10.10.10.0/24"
+      TF_VAR_machine_type: "e2-medium" 
+      TF_VAR_disk_size: "20"
+      TF_VAR_image: "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+      TF_VAR_state_bucket: "terraform-state-lab3-devops2"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -input=false
