@@ -38,7 +38,7 @@ jobs:
       TF_VAR_image: "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
 
       # Bucket state
-      TF_VAR_state_bucket: "terraform-state-lab3-devops2"
+      TF_VAR_state_bucket: "terraform-state-lab3-dev"
 
     steps:
       - name: Checkout code
